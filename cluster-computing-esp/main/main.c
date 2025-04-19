@@ -1,12 +1,20 @@
+#include "driver/gpio.h"
 #include "freertos/idf_additions.h"
+#include "mqtt/mqtt.h"
+#include "mqtt_client.h"
 #include "portmacro.h"
-#include "cJSON.h"
 #include "wifi/wifi.h"
+#include <memory.h>
+#include <string.h>
 
 #define SSID "ivdc"
 #define PASSWORD "hellhell"
+#define BROKER_URI "mqtt://192.168.151.195:1883"
 
 void app_main(void) {
+  gpio_reset_pin(2);
+  gpio_set_direction(2, GPIO_MODE_OUTPUT);
+
   if (!init_wifi()) {
     printf("Cannot intialize wifi\n");
     esp_restart();
@@ -22,16 +30,15 @@ void app_main(void) {
   }
   printf("ip-%s\n", wifi.ip);
 
-  cJSON* object = cJSON_CreateObject();
-  cJSON* stats = cJSON_CreateObject();
-  cJSON_AddItemToObject(object, "name", cJSON_CreateString("GP"));
-  cJSON_AddItemToObject(object, "stats", stats);
-  cJSON_AddItemToObject(stats, "age", cJSON_CreateNumber(18));
-  cJSON_AddItemToObject(stats, "best-anime", cJSON_CreateString("Attack On Titan"));
-  printf("%s\n", cJSON_Print(object));
-  cJSON_Delete(object);
+  esp_mqtt_client_config_t mqtt_cfg = {.broker.address.uri = BROKER_URI,
+                                       .broker.address.port = 1883};
+  MQTT mqtt;
+  mqtt_init(&mqtt_cfg, &mqtt);
 
   while (1) {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
+
+  destroy_wifi(&wifi);
 }
+
