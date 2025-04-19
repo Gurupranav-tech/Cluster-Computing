@@ -25,8 +25,12 @@ void mqtt_init(esp_mqtt_client_config_t *mqtt_cfg, MQTT* mqtt) {
   esp_mqtt_client_start(client);
 }
 
-static void handle_json_payload(const char *data, int len) {
-  char *json_string = strndup(data, len);
+static void handle_json_payload(const char* topic, int topic_len, const char *data, int data_len) {
+  char* topic_string = strndup(topic, topic_len);
+  char *json_string = strndup(data, data_len);
+
+  printf("Topic: %s \t Data: %s\n", topic_string, json_string);
+
   if (!json_string) {
     printf("Memory allocation failed\n");
     return;
@@ -41,6 +45,7 @@ static void handle_json_payload(const char *data, int len) {
 
   cJSON_Delete(root);
   free(json_string);
+  free(topic_string);
 }
 
 static void send_macaddr(esp_mqtt_client_handle_t client, MQTT *mqtt) {
@@ -49,18 +54,22 @@ static void send_macaddr(esp_mqtt_client_handle_t client, MQTT *mqtt) {
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                int32_t event_id, void *event_data) {
+  MQTT mqtt = *(MQTT*)handler_args;
   esp_mqtt_event_handle_t event = event_data;
   esp_mqtt_client_handle_t client = event->client;
   switch ((esp_mqtt_event_id_t)event_id) {
   case MQTT_EVENT_CONNECTED:
     printf("Connected to MQTT\n");
     send_macaddr(client, handler_args);
+    char buf[256];
+    sprintf(buf, "/topic/%s", mqtt.mac_addr);
+    esp_mqtt_client_subscribe(client, buf, 1);
     break;
   case MQTT_EVENT_DISCONNECTED:
     printf("Disconnected from mqtt\n");
     break;
   case MQTT_EVENT_DATA:
-    handle_json_payload(event->data, event->data_len);
+    handle_json_payload(event->topic, event->topic_len, event->data, event->data_len);
     break;
   default:
     break;
