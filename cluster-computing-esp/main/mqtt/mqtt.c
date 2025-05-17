@@ -1,13 +1,15 @@
 #include "mqtt.h"
-#include "cJSON.h"
 #include "driver/gpio.h"
 #include "esp_wifi.h"
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                int32_t event_id, void *event_data);
 
-void mqtt_init(esp_mqtt_client_config_t *mqtt_cfg, MQTT* mqtt) {
+static bool img_received = false;
+static size_t buf_idx = 0;
+static uint8_t img_buffer[IMG_SIZE];
 
+void mqtt_init(esp_mqtt_client_config_t *mqtt_cfg, MQTT *mqtt) {
   uint8_t mac[6];
   char mac_str[18];
 
@@ -23,38 +25,16 @@ void mqtt_init(esp_mqtt_client_config_t *mqtt_cfg, MQTT* mqtt) {
   esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler,
                                  mqtt);
   esp_mqtt_client_start(client);
-}
-
-static void handle_json_payload(const char* topic, int topic_len, const char *data, int data_len) {
-  char* topic_string = strndup(topic, topic_len);
-  char *json_string = strndup(data, data_len);
-
-  printf("Topic: %s \t Data: %s\n", topic_string, json_string);
-
-  if (!json_string) {
-    printf("Memory allocation failed\n");
-    return;
-  }
-
-  cJSON *root = cJSON_Parse(json_string);
-  if (!root) {
-    printf("Failed to parse JSON\n");
-    free(json_string);
-    return;
-  }
-
-  cJSON_Delete(root);
-  free(json_string);
-  free(topic_string);
+  mqtt->client_handle = client;
 }
 
 static void send_macaddr(esp_mqtt_client_handle_t client, MQTT *mqtt) {
-  esp_mqtt_client_publish(client, "/topic/identity", mqtt->mac_addr, 0, 0, 0);
+  esp_mqtt_client_publish(client, "/topic/identity", mqtt->mac_addr, 0, 1, 0);
 }
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                int32_t event_id, void *event_data) {
-  MQTT mqtt = *(MQTT*)handler_args;
+  MQTT mqtt = *(MQTT *)handler_args;
   esp_mqtt_event_handle_t event = event_data;
   esp_mqtt_client_handle_t client = event->client;
   switch ((esp_mqtt_event_id_t)event_id) {
@@ -69,7 +49,37 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     printf("Disconnected from mqtt\n");
     break;
   case MQTT_EVENT_DATA:
-    handle_json_payload(event->topic, event->topic_len, event->data, event->data_len);
+    if (buf_idx + event->data_len <= IMG_SIZE) {
+      memcpy(&img_buffer[buf_idx], event->data, event->data_len);
+      buf_idx += event->data_len;
+
+      if (buf_idx == IMG_SIZE && !img_received) {
+        img_received = true;
+        printf("Recv...\n");
+        gpio_set_level(2, 1);
+
+        for (int i = 0; i < IMG_WIDTH; i++) {
+          for (int j = 0; j < IMG_HEIGHT; j++) {
+            int bidx = PIXEL(i, j, 0);
+            int r = img_buffer[bidx], g = img_buffer[bidx + 1],
+                b = img_buffer[bidx + 2];
+            int avg = (r + g + b) / 3;
+            img_buffer[bidx + 0] = avg;
+            img_buffer[bidx + 1] = avg;
+            img_buffer[bidx + 2] = avg;
+          }
+        }
+        char buf[256];
+        sprintf(buf, "/topic/%s/out", mqtt.mac_addr);
+        esp_mqtt_client_publish(mqtt.client_handle, buf, (const char*)img_buffer, IMG_SIZE,
+                                1, 0);
+        gpio_set_level(2, 0);
+
+        buf_idx = 0;
+        img_received = false;
+      }
+    } else {
+    }
     break;
   default:
     break;

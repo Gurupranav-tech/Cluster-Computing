@@ -7,9 +7,9 @@
 #include <memory.h>
 #include <string.h>
 
-#define SSID "ivdc"
+#define SSID "gp"
 #define PASSWORD "hellhell"
-#define BROKER_URI "mqtt://192.168.151.195:1883"
+#define BROKER_URI "mqtt://192.168.132.195:1883"
 
 void app_main(void) {
   gpio_reset_pin(2);
@@ -30,8 +30,10 @@ void app_main(void) {
   }
   printf("ip-%s\n", wifi.ip);
 
-  esp_mqtt_client_config_t mqtt_cfg = {.broker.address.uri = BROKER_URI,
-                                       .broker.address.port = 1883};
+  esp_mqtt_client_config_t mqtt_cfg = {
+      .broker.address.uri = BROKER_URI,
+      .broker.address.port = 1883,
+  };
   MQTT mqtt;
   mqtt_init(&mqtt_cfg, &mqtt);
 
@@ -41,4 +43,3 @@ void app_main(void) {
 
   destroy_wifi(&wifi);
 }
-
